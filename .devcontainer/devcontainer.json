@@ -1,0 +1,26 @@
+{
+  "name": "Go",
+  "image": "mcr.microsoft.com/devcontainers/go:1-1.22-bookworm",
+  "remoteEnv": {
+    "EDITOR": "/vim --appimage-extract-and-run -- "
+  },
+  "mounts": [
+    {
+      "type": "bind",
+      "source": "${localEnv:HOME}/.vim",
+      "target": "/home/vscode/.vim"
+    },
+    {
+      "type": "bind",
+      "source": "${localEnv:HOME}/.gitconfig",
+      "target": "/home/vscode/.gitconfig"
+    }
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {
+    },
+    "ghcr.io/devcontainers-contrib/features/zig:1": {
+    }
+  },
+  "remoteUser": "vscode"
+}
