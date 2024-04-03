@@ -20,6 +20,8 @@
     "ghcr.io/devcontainers/features/git:1": {
     },
     "ghcr.io/devcontainers-contrib/features/zig:1": {
+    },
+    "ghcr.io/jungaretti/features/make:1": {
     }
   },
   "remoteUser": "vscode"
