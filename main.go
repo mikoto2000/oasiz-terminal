@@ -4,18 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
-	"syscall"
 
-	"github.com/jchv/go-webview2"
+	webview "github.com/webview/webview_go"
 )
 
 const appName = "oasiz-terminal"
@@ -41,70 +38,50 @@ func main() {
 	listener.Close()
 
 	// ttyd を起動
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
 	_, port, err := net.SplitHostPort(listener.Addr().String())
 	if err != nil {
 		panic(err)
 	}
-	command := []string{"powershell.exe"}
-	if len(os.Args) > 1 {
-		command = os.Args[1:]
-	}
-	ttyExec := startTtyd(ttydExecutablePath, port, command)
-	defer ttyExec.Process.Kill()
 
-	// ブラウザを起動
-	w := webview2.NewWithOptions(webview2.WebViewOptions{
-		Debug:     true,
-		AutoFocus: true,
-		WindowOptions: webview2.WindowOptions{
-			Title:  "OASIZ Terminal",
-			Width:  800,
-			Height: 600,
-			IconId: 2, // icon resource id
-			Center: true,
-		},
-	})
-	if w == nil {
-		log.Fatalln("Failed to load webview.")
-	}
+	// ブラウザを起動(表示はまだ)
+	debug := true
+	w := webview.New(debug)
 	defer w.Destroy()
-	w.SetSize(800, 600, webview2.HintNone)
-	w.Navigate("http://127.0.0.1:" + port)
-	w.Run()
+	w.SetTitle("OASIZ Terminal")
+	w.SetSize(960, 640, webview.HintNone)
 
-}
-
-func startTtyd(ttydExecutablePath string, port string, command []string) *exec.Cmd {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	ttydArgs := []string{
-		"-p", port,
-		"--writable", "--once",
-		"-t", "enableSixel=true",
-		"-t", "disableReconnect=true",
-		"winpty"}
-
-	ttydArgs = slices.Concat(ttydArgs, command)
-
+	// ttyd の開始情報組み立て
+	ttydArgs := []string{"--writable", "--port", port, "--once", "-t", "enableSixel=true", os.Args[1]}
 	fmt.Printf("Start ttyd: `%s \"%s\"`\n", ttydExecutablePath, strings.Join(ttydArgs, "\" \""))
 	ttydExec := exec.CommandContext(ctx, ttydExecutablePath, ttydArgs...)
 	ttydExec.Stdout = os.Stdout
 	ttydExec.Stderr = os.Stderr
+
+	// Interrupt で、ブラウザを閉じて ttyd を殺して終了する
 	ttydExec.Cancel = func() error {
 		fmt.Fprintf(os.Stderr, "Receive SIGINT.\n")
-		return ttydExec.Process.Signal(os.Interrupt)
+		w.Terminate()
+		ttydExec.Process.Kill()
+		os.Exit(0)
+		return nil
 	}
-	ttydExec.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000}
 
-	err := ttydExec.Start()
+	// ttyd 起動
+	err = ttydExec.Start()
 	if err != nil {
 		panic(err)
 	}
 
-	return ttydExec
-}
+	// ブラウザ表示
+	fmt.Println("Open browser: http://localhost:" + port)
+	w.Navigate("http://localhost:" + port)
+	w.Run()
 
+	ttydExec.Process.Kill()
+}
 
 // ttyd を格納するディレクトリを作成する。
 // 作成したディレクトリのパスを返却する。
@@ -136,16 +113,6 @@ func installTtyd(downloadUrl string, installDir string, fileName string) (string
 
 	// 実行権限の付与
 	err = addExecutePermission(filePath)
-	if err != nil {
-		return filePath, err
-	}
-
-	// 互換性モードの設定
-	fmt.Println("reg", "add", `HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers`, "/v", filePath, "/d", "WIN8RTM", "/f")
-	regExec := exec.Command("reg", "add", `HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers`, "/v", filePath, "/d", "WIN8RTM", "/f")
-	fmt.Println(regExec)
-
-	err = regExec.Run()
 	if err != nil {
 		return filePath, err
 	}
